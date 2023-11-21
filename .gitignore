@@ -1,0 +1,7 @@
+/img
+/venv
+/__pycache__
+/.ipynb_checkpoints
+/Untitled.ipynb
+.vercel
+/cnn_model.pkl
