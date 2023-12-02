@@ -20,6 +20,9 @@ app = Flask(__name__)
 CORS(app, resources={
     r"/uploadfile": {
         "origins": ["*"]
+    },
+    r"/uploadfile-blueberry": {
+        "origins": ["*"]
     }
 })
 
@@ -52,7 +55,28 @@ def predict_image_label(img):
 
 
 @app.post("/uploadfile")
-def upload_file():
+def upload_file_corn():
+    if "file" not in request.files:
+        return jsonify({"error": "No file part"}, 400)
+
+    file = request.files["file"]
+    print(file)
+    image = Image.open(file)
+    image = image.resize((224, 224))
+    if file.filename == "":
+        return jsonify({"error": "No selected file"}, 400)
+
+    if file and file.content_type.startswith('image/'):
+        label, confidence = predict_image_label(image)
+        # healthy = "saludable" if "healthy" in label else "enferma"
+        print(confidence)
+        return jsonify({"label": label, "confidence": str(confidence)}), 200
+    else:
+        return jsonify({"error": "Uploaded file is not an image"}, 400)
+
+
+@app.post("/uploadfile-blueberry")
+def upload_file_blueberry():
     if "file" not in request.files:
         return jsonify({"error": "No file part"}, 400)
 
@@ -73,4 +97,4 @@ def upload_file():
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='192.168.0.3')
+    app.run(debug=True, host='ip')
