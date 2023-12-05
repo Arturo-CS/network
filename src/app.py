@@ -1,3 +1,6 @@
+from flask import current_app
+import datetime
+import jwt
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import tensorflow as tf
@@ -15,6 +18,11 @@ from keras.preprocessing import image
 from PIL import Image
 import io
 import numpy as np
+from flask_pymongo import PyMongo
+from flask import Flask, request, jsonify
+from pymongo import MongoClient
+from pymongo.errors import DuplicateKeyError, PyMongoError
+from bson import ObjectId  # Importa ObjectId desde el módulo bson
 
 app = Flask(__name__)
 CORS(app, resources={
@@ -25,7 +33,111 @@ CORS(app, resources={
         "origins": ["*"]
     }
 })
+app.config['SECRET_KEY'] = 'mysecretkey'
+app.config['MONGO_URI'] = 'mongodb+srv://ccortegana:FBNF5wOPPSY3YgVn@cluster0.bvjsv3g.mongodb.net/Movil'
+mongo = PyMongo(app)
 
+dbUser = mongo.db['User']
+
+# Función para generar token
+
+
+def generar_token(usuario):
+    expiracion = datetime.datetime.utcnow() + datetime.timedelta(days=2)
+    payload = {
+        '_id': str(usuario['_id']),
+        'email': usuario['email'],
+        'password': usuario['password'],
+        'username': usuario['username'],
+        'phone': usuario['phone'],
+        'exp': expiracion
+    }
+    token = jwt.encode(
+        payload, current_app.config['SECRET_KEY'], algorithm='HS256')
+    return token
+
+
+@app.route('/login', methods=['POST'])
+def login():
+    try:
+        data = request.get_json()
+        email = data.get('email')
+        password = data.get('password')
+
+        # Verificar si se proporcionaron correo y contraseña
+        if not email or not password:
+            return jsonify({'error': 'Correo y contraseña son requeridos'}), 400
+
+        user = dbUser.find_one({'email': email})
+
+        # Verificar si el usuario existe
+        if not user:
+            return jsonify({'error': 'Correo electrónico no encontrado'}), 404
+
+        # Verificar la contraseña
+        if user['password'] != password:
+            return jsonify({'error': 'Contraseña incorrecta'}), 401
+
+        # Generar y devolver el token
+        token = generar_token(user)
+        username = user.get('username', '')
+        return jsonify({'token': token, 'username': username}), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/register', methods=['POST'])
+def create_user():
+    try:
+        user_data = {
+            'email': request.json.get('email'),
+            'password': request.json.get('password'),
+            'username': request.json.get('username'),
+            'phone': request.json.get('phone', ''),
+        }
+
+        # Verificar si el usuario ya existe por el campo 'email'
+        if dbUser.find_one({'email': user_data['email']}):
+            return jsonify({'error': 'El usuario con este email ya existe.'}), 400
+
+        result = dbUser.insert_one(user_data)
+
+        return jsonify({'user_id': str(result.inserted_id), 'username': user_data['username']}), 201
+
+    except DuplicateKeyError:
+        return jsonify({'error': 'El usuario con este email ya existe.'}), 400
+
+    except PyMongoError as e:
+        return jsonify({'error': f'Error en la base de datos: {str(e)}'}), 500
+
+    except Exception as e:
+        return jsonify({'error': f'Error inesperado: {str(e)}'}), 500
+
+
+
+@app.route('/profile/<string:email>', methods=['GET'])
+def get_user_profile(email):
+    try:
+        # Buscar el usuario por el correo electrónico
+        user = dbUser.find_one({'email': email})
+
+        # Verificar si el usuario existe
+        if user:
+            # Convierte el ObjectId a una cadena antes de serializar a JSON
+            user['_id'] = str(user['_id'])
+
+            # Eliminar el campo de contraseña antes de devolver el perfil
+            user.pop('password', None)
+            return jsonify(user)
+        else:
+            return jsonify({'error': 'Usuario no encontrado'}), 404
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# RED NEURONAL
 model_path = "./plant_disease_detection.h5"  # Replace with the actual path
 model = tf.keras.models.load_model(model_path)
 
